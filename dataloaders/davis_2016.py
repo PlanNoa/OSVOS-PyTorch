@@ -51,9 +51,9 @@ class DAVIS2016(Dataset):
 
             # Initialize the per sequence images for online training
             names_img = np.sort(os.listdir(os.path.join(db_root_dir, 'JPEGImages/480p/', str(seq_name))))
-            img_list = list(map(lambda x: os.path.join('JPEGImages/480p/', str(seq_name), x), names_img))
+            img_list = list(map(lambda x: os.path.join('JPEGImages/480p/', str(seq_name), x), names_img))[1:]
             name_label = np.sort(os.listdir(os.path.join(db_root_dir, 'Annotations/480p/', str(seq_name))))
-            labels = [os.path.join('Annotations/480p/', str(seq_name), name_label[0])]
+            labels = [os.path.join('Annotations/480p/', str(seq_name), name_label[0])][1:]
             labels.extend([None]*(len(names_img)-1))
             if self.train:
                 img_list = [img_list[0]]
