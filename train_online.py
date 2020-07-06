@@ -18,6 +18,7 @@ from dataloaders import davis_2016 as db
 from dataloaders import custom_transforms as tr
 from util import visualize as viz
 import scipy.misc as sm
+from imageio import imwrite
 import networks.vgg_osvos as vo
 from layers.osvos_layers import class_balanced_cross_entropy_loss
 from dataloaders.helpers import *
@@ -25,7 +26,7 @@ from mypath import Path
 
 # Setting of parameters
 if 'SEQ_NAME' not in os.environ.keys():
-    seq_name = 'blackswan'
+    seq_name = 'frames'
 else:
     seq_name = str(os.environ['SEQ_NAME'])
 
@@ -35,8 +36,8 @@ save_dir = Path.save_root_dir()
 if not os.path.exists(save_dir):
     os.makedirs(os.path.join(save_dir))
 
-vis_net = 0  # Visualize the network?
-vis_res = 0  # Visualize the results?
+vis_net = 1  # Visualize the network?
+vis_res = 1  # Visualize the results?
 nAveGrad = 5  # Average the gradient every nAveGrad iterations
 nEpochs = 2000 * nAveGrad  # Number of epochs for training
 snapshot = nEpochs  # Store a model every snapshot epochs
@@ -93,67 +94,67 @@ composed_transforms = transforms.Compose([tr.RandomHorizontalFlip(),
                                           tr.ScaleNRotate(rots=(-30, 30), scales=(.75, 1.25)),
                                           tr.ToTensor()])
 # Training dataset and its iterator
-db_train = db.DAVIS2016(train=True, db_root_dir=db_root_dir, transform=composed_transforms, seq_name=seq_name)
-trainloader = DataLoader(db_train, batch_size=p['trainBatch'], shuffle=True, num_workers=1)
+# db_train = db.DAVIS2016(train=True, db_root_dir=db_root_dir, transform=composed_transforms, seq_name=seq_name)
+# trainloader = DataLoader(db_train, batch_size=p['trainBatch'], shuffle=True, num_workers=1)
 
 # Testing dataset and its iterator
 db_test = db.DAVIS2016(train=False, db_root_dir=db_root_dir, transform=tr.ToTensor(), seq_name=seq_name)
 testloader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
 
-num_img_tr = len(trainloader)
+# num_img_tr = len(trainloader)
 num_img_ts = len(testloader)
 loss_tr = []
 aveGrad = 0
 
-print("Start of Online Training, sequence: " + seq_name)
-start_time = timeit.default_timer()
-# Main Training and Testing Loop
-for epoch in range(0, nEpochs):
-    # One training epoch
-    running_loss_tr = 0
-    np.random.seed(seed + epoch)
-    for ii, sample_batched in enumerate(trainloader):
+# print("Start of Online Training, sequence: " + seq_name)
+# start_time = timeit.default_timer()
+# # Main Training and Testing Loop
+# for epoch in range(0, nEpochs):
+#     # One training epoch
+#     running_loss_tr = 0
+#     np.random.seed(seed + epoch)
+#     for ii, sample_batched in enumerate(trainloader):
 
-        inputs, gts = sample_batched['image'], sample_batched['gt']
+#         inputs, gts = sample_batched['image'], sample_batched['gt']
 
-        # Forward-Backward of the mini-batch
-        inputs.requires_grad_()
-        inputs, gts = inputs.to(device), gts.to(device)
+#         # Forward-Backward of the mini-batch
+#         inputs.requires_grad_()
+#         inputs, gts = inputs.to(device), gts.to(device)
 
-        outputs = net.forward(inputs)
+#         outputs = net.forward(inputs)
 
-        # Compute the fuse loss
-        loss = class_balanced_cross_entropy_loss(outputs[-1], gts, size_average=False)
-        running_loss_tr += loss.item()  # PyTorch 0.4.0 style
+#         # Compute the fuse loss
+#         loss = class_balanced_cross_entropy_loss(outputs[-1], gts, size_average=False)
+#         running_loss_tr += loss.item()  # PyTorch 0.4.0 style
 
-        # Print stuff
-        if epoch % (nEpochs//20) == (nEpochs//20 - 1):
-            running_loss_tr /= num_img_tr
-            loss_tr.append(running_loss_tr)
+#         # Print stuff
+#         if epoch % (nEpochs//20) == (nEpochs//20 - 1):
+#             running_loss_tr /= num_img_tr
+#             loss_tr.append(running_loss_tr)
 
-            print('[Epoch: %d, numImages: %5d]' % (epoch+1, ii + 1))
-            print('Loss: %f' % running_loss_tr)
-            writer.add_scalar('data/total_loss_epoch', running_loss_tr, epoch)
+#             print('[Epoch: %d, numImages: %5d]' % (epoch+1, ii + 1))
+#             print('Loss: %f' % running_loss_tr)
+#             writer.add_scalar('data/total_loss_epoch', running_loss_tr, epoch)
 
-        # Backward the averaged gradient
-        loss /= nAveGrad
-        loss.backward()
-        aveGrad += 1
+#         # Backward the averaged gradient
+#         loss /= nAveGrad
+#         loss.backward()
+#         aveGrad += 1
 
-        # Update the weights once in nAveGrad forward passes
-        if aveGrad % nAveGrad == 0:
-            writer.add_scalar('data/total_loss_iter', loss.item(), ii + num_img_tr * epoch)
-            optimizer.step()
-            optimizer.zero_grad()
-            aveGrad = 0
+#         # Update the weights once in nAveGrad forward passes
+#         if aveGrad % nAveGrad == 0:
+#             writer.add_scalar('data/total_loss_iter', loss.item(), ii + num_img_tr * epoch)
+#             optimizer.step()
+#             optimizer.zero_grad()
+#             aveGrad = 0
 
-    # Save the model
-    if (epoch % snapshot) == snapshot - 1 and epoch != 0:
-        torch.save(net.state_dict(), os.path.join(save_dir, seq_name + '_epoch-'+str(epoch) + '.pth'))
+#     # Save the model
+#     if (epoch % snapshot) == snapshot - 1 and epoch != 0:
+#         torch.save(net.state_dict(), os.path.join(save_dir, seq_name + '_epoch-'+str(epoch) + '.pth'))
 
-stop_time = timeit.default_timer()
-print('Online training time: ' + str(stop_time - start_time))
+# stop_time = timeit.default_timer()
+# print('Online training time: ' + str(stop_time - start_time))
 
 
 # Testing Phase
@@ -184,23 +185,26 @@ with torch.no_grad():  # PyTorch 0.4.0 style
             pred = np.transpose(outputs[-1].cpu().data.numpy()[jj, :, :, :], (1, 2, 0))
             pred = 1 / (1 + np.exp(-pred))
             pred = np.squeeze(pred)
+            pred[pred>0.5] = 1
+            pred[pred<=0.5] = 0
 
             # Save the result, attention to the index jj
-            sm.imsave(os.path.join(save_dir_res, os.path.basename(fname[jj]) + '.png'), pred)
+            # sm.imsave(os.path.join(save_dir_res, os.path.basename(fname[jj]) + '.png'), pred)
+            imwrite(os.path.join(save_dir_res, os.path.basename(fname[jj]) + '.png'), pred)
 
             if vis_res:
                 img_ = np.transpose(img.numpy()[jj, :, :, :], (1, 2, 0))
-                gt_ = np.transpose(gt.numpy()[jj, :, :, :], (1, 2, 0))
-                gt_ = np.squeeze(gt)
+                # gt_ = np.transpose(gt.numpy()[jj, :, :, :], (1, 2, 0))
+                # gt_ = np.squeeze(gt)
                 # Plot the particular example
                 ax_arr[0].cla()
                 ax_arr[1].cla()
                 ax_arr[2].cla()
                 ax_arr[0].set_title('Input Image')
-                ax_arr[1].set_title('Ground Truth')
+                # ax_arr[1].set_title('Ground Truth')
                 ax_arr[2].set_title('Detection')
                 ax_arr[0].imshow(im_normalize(img_))
-                ax_arr[1].imshow(gt_)
+                # ax_arr[1].imshow(gt_)
                 ax_arr[2].imshow(im_normalize(pred))
                 plt.pause(0.001)
 
