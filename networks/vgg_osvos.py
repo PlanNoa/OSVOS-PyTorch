@@ -1,20 +1,15 @@
-from __future__ import division
-
 import math
-import os
-from copy import deepcopy
 import scipy.io
 
 import torch
 import torch.nn as nn
 import torch.nn.modules as modules
 
-from layers.osvos_layers import center_crop, interp_surgery
-from mypath import Path
+from utils import center_crop, interp_surgery
 
 
 class OSVOS(nn.Module):
-    def __init__(self, pretrained=1):
+    def __init__(self):
         super(OSVOS, self).__init__()
         lay_list = [[64, 64],
                     ['M', 128, 128],
@@ -30,17 +25,12 @@ class OSVOS(nn.Module):
         upscale = modules.ModuleList()
         upscale_ = modules.ModuleList()
 
-        # Construct the network
         for i in range(0, len(lay_list)):
-            # Make the layers of the stages
             stages.append(make_layers_osvos(lay_list[i], in_channels[i]))
 
-            # Attention, side_prep and score_dsn start from layer 2
             if i > 0:
-                # Make the layers of the preparation step
                 side_prep.append(nn.Conv2d(lay_list[i][-1], 16, kernel_size=3, padding=1))
 
-                # Make the layers of the score_dsn step
                 score_dsn.append(nn.Conv2d(16, 1, kernel_size=1, padding=0))
                 upscale_.append(nn.ConvTranspose2d(1, 1, kernel_size=2 ** (1 + i), stride=2 ** i, bias=False))
                 upscale.append(nn.ConvTranspose2d(16, 16, kernel_size=2 ** (1 + i), stride=2 ** i, bias=False))
@@ -53,8 +43,7 @@ class OSVOS(nn.Module):
 
         self.fuse = nn.Conv2d(64, 1, kernel_size=1, padding=0)
 
-        print("Initializing weights..")
-        self._initialize_weights(pretrained)
+        self._initialize_weights()
 
     def forward(self, x):
         crop_h, crop_w = int(x.size()[-2]), int(x.size()[-1])
@@ -73,7 +62,7 @@ class OSVOS(nn.Module):
         side_out.append(out)
         return side_out
 
-    def _initialize_weights(self, pretrained):
+    def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 m.weight.data.normal_(0, 0.001)
@@ -89,40 +78,18 @@ class OSVOS(nn.Module):
                 m.weight.data.zero_()
                 m.weight.data = interp_surgery(m)
 
-        if pretrained == 1:
-            print("Loading weights from PyTorch VGG")
-            vgg_structure = [64, 64, 'M', 128, 128, 'M', 256, 256, 256,
-                             'M', 512, 512, 512, 'M', 512, 512, 512, 'M']
-            _vgg = VGG(make_layers(vgg_structure))
-
-            # Load the weights from saved model
-            _vgg.load_state_dict(torch.load(os.path.join(Path.models_dir(), 'vgg_pytorch.pth'),
-                                            map_location=lambda storage, loc: storage))
-
-            inds = find_conv_layers(_vgg)
-            k = 0
-            for i in range(len(self.stages)):
-                for j in range(len(self.stages[i])):
-                    if isinstance(self.stages[i][j], nn.Conv2d):
-                        self.stages[i][j].weight = deepcopy(_vgg.features[inds[k]].weight)
-                        self.stages[i][j].bias = deepcopy(_vgg.features[inds[k]].bias)
-                        k += 1
-        elif pretrained == 2:
-            print("Loading weights from Caffe VGG")
-            # Load weights from Caffe
-            caffe_weights = scipy.io.loadmat(os.path.join(Path.models_dir(), 'vgg_caffe.mat'))
-            # Core network
-            caffe_ind = 0
-            for ind, layer in enumerate(self.stages.parameters()):
-                if ind % 2 == 0:
-                    c_w = torch.from_numpy(caffe_weights['weights'][0][caffe_ind].transpose())
-                    assert (layer.data.shape == c_w.shape)
-                    layer.data = c_w
-                else:
-                    c_b = torch.from_numpy(caffe_weights['biases'][0][caffe_ind][:, 0])
-                    assert (layer.data.shape == c_b.shape)
-                    layer.data = c_b
-                    caffe_ind += 1
+        caffe_weights = scipy.io.loadmat('models/vgg_caffe.mat')
+        caffe_ind = 0
+        for ind, layer in enumerate(self.stages.parameters()):
+            if ind % 2 == 0:
+                c_w = torch.from_numpy(caffe_weights['weights'][0][caffe_ind].transpose())
+                assert (layer.data.shape == c_w.shape)
+                layer.data = c_w
+            else:
+                c_b = torch.from_numpy(caffe_weights['biases'][0][caffe_ind][:, 0])
+                assert (layer.data.shape == c_b.shape)
+                layer.data = c_b
+                caffe_ind += 1
 
 
 def find_conv_layers(_vgg):
